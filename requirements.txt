@@ -1,0 +1,21 @@
+# Core ML / inference (TrackNet, court detector, bounce model).
+# TennisProject's own requirements.txt pins torch==1.5.0 / torchvision==0.6.0 (2020-era) —
+# too old for a modern CUDA/driver stack. Install torch/torchvision separately on the
+# NVIDIA machine using the command from https://pytorch.org/get-started/locally/ matched
+# to that machine's CUDA version, then install the rest of this file.
+torch>=2.1
+torchvision>=0.16
+catboost==1.1.1
+numpy<2.0
+scipy
+pandas
+opencv-python
+scenedetect
+sympy
+tqdm
+matplotlib
+
+# Testing / tooling
+pytest
+ruff
+black

@@ -1,0 +1,39 @@
+# Tennis Match Analysis App
+
+## Purpose
+SwingVision-style app: upload a fixed-camera tennis match video → ball tracking, in/out calls on bounces, per-shot speed estimates, and a running score (human-in-the-loop confirmed). Full scope, non-goals, and phased roadmap live in [docs/development-plan.md](docs/development-plan.md) — read it before starting any phase.
+
+## Current phase
+**Phase 0 — Environment & baseline validation.** Repo scaffolded, reference repos surveyed. Next: get the pretrained TennisProject pipeline running end-to-end on a sample clip.
+
+## Compute
+No local NVIDIA GPU (this dev machine has an AMD Radeon RX 580 — no CUDA). All GPU-heavy inference (Phase 0 pipeline run, Phase 1 perception extraction) runs on a **separate NVIDIA machine**, operated by the user. Claude Code writes/tests code here; the user runs inference elsewhere and pastes back results, errors, and output files.
+
+## Architecture
+
+| Stage | What it does | Source |
+|---|---|---|
+| Court detection + homography | 14 court keypoints (+1 center) → pixel↔meters transform | yastrebksv/TennisCourtDetector |
+| Ball tracking | Heatmap tracker over consecutive frames (handles blur) | yastrebksv/TrackNet |
+| Bounce detection | CatBoost on ball trajectory → bounce frames | yastrebksv/TennisProject |
+| In/out + speed | Bounce point through homography vs. line rules; displacement/time | Custom (this repo) |
+| Scoring | Rally segmentation + game/set state machine, hybrid confirm | Custom (this repo) |
+
+**Foundation:** `yastrebksv/TennisProject` — combines ball tracking, homography, and bounce detection; the only credible path to in/out. **Borrow** the mini-court/speed-visualization approach from `abdullahtarek/tennis_analysis` for presentation only.
+
+**Data flow:** `video → court keypoints + homography (per frame) → ball pixel positions → ball court-coordinates → bounce frames → {in/out, speed} → rally outcomes → score`
+
+**Caching:** GPU inference (court detection, ball tracking, bounce detection) runs once per clip; results are persisted to `data/` as JSON so every downstream stage (in/out, speed, scoring) reads from cache instead of re-running models.
+
+## Reference repos — what to pull from each
+- **yastrebksv/TennisProject** — `main.py` (pipeline entrypoint), `ball_detector.py`, `court_detection_net.py`, `bounce_detector.py`, `homography.py`. Expects 1280×720 input. Pinned deps in its `requirements.txt` are old (torch 1.5.0/torchvision 0.6.0, 2020-era) — do not blindly reuse those pins on a modern CUDA/driver stack; verify compatible versions instead (see `docs/decisions.md`).
+- **yastrebksv/TennisCourtDetector** — 14 keypoints + 1 center point, heatmap output refined with classical CV postprocessing (line detection + homography). Input 640×360; trained on 1280×720 source frames. Inference scripts: `infer_in_video.py`, `infer_in_image.py`.
+- **yastrebksv/TrackNet** — ball heatmap tracker over consecutive frames, 1280×720 @ 30fps in its training data. Inference: `infer_on_video.py`. TennisProject bundles a compatible version of this already — only go to the standalone repo if TennisProject's copy is insufficient.
+- **abdullahtarek/tennis_analysis** — mini-court + speed overlay visualization style only, for Phase 5. Not a source of tracking/detection logic.
+
+## Conventions
+- Module boundaries follow `src/perception/`, `src/analysis/`, `src/scoring/`, `src/viz/`, orchestrated by `src/pipeline.py` — see [docs/development-plan.md §4](docs/development-plan.md) for the full repo layout.
+- Intermediate results (court keypoints/homography, ball court-coordinates, bounce frames) are cached to `data/` as JSON/parquet — never re-run GPU inference to get data already on disk.
+- Deterministic logic (homography math, in/out geometry, scoring state machine) must be unit-tested with `pytest` and must not depend on a GPU or model weights.
+- One phase per session, one `phase-N-*` branch, commit per working increment.
+- Decisions (court model, speed smoothing, scoring rules, dependency version choices) are logged in `docs/decisions.md` as they're made.

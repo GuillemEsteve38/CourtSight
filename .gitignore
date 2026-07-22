@@ -1,0 +1,19 @@
+.claude/
+
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+
+# Large/binary assets — not tracked in git
+data/raw/*
+data/samples/*
+data/weights/*
+!data/raw/.gitkeep
+!data/samples/.gitkeep
+!data/weights/.gitkeep
+
+vendor/
