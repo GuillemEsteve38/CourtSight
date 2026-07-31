@@ -8,6 +8,7 @@ from src.perception.homography import (
     court_to_pixel,
     estimate_homography,
     pixel_to_court,
+    project_track,
 )
 
 
@@ -105,3 +106,40 @@ def test_court_to_pixel_is_inverse_of_pixel_to_court(known_affine_matrix):
         meters_point = pixel_to_court(pixel_point, homography)
         roundtrip_pixel = court_to_pixel(meters_point, homography)
         assert roundtrip_pixel == pytest.approx(pixel_point, abs=1e-2)
+
+
+def test_project_track_maps_each_frame_with_its_own_homography(known_affine_matrix):
+    homography = estimate_homography(_synthetic_pixel_points(known_affine_matrix))
+    # Two frames whose pixel points correspond to known meter positions.
+    expected = [REFERENCE_KEYPOINTS_M[0], REFERENCE_KEYPOINTS_M[3]]
+    track_px = [court_to_pixel(m, homography) for m in expected]
+
+    projected = project_track(track_px, [homography, homography])
+
+    for actual, want in zip(projected, expected):
+        assert actual == pytest.approx(want, abs=1e-2)
+
+
+def test_project_track_preserves_frame_alignment_through_gaps(known_affine_matrix):
+    homography = estimate_homography(_synthetic_pixel_points(known_affine_matrix))
+    point_px = court_to_pixel(REFERENCE_KEYPOINTS_M[0], homography)
+
+    # Missing point, missing homography, and both present.
+    projected = project_track(
+        [None, point_px, point_px],
+        [homography, None, homography],
+    )
+
+    assert len(projected) == 3
+    assert projected[0] is None  # no ball detected
+    assert projected[1] is None  # no homography for that frame
+    assert projected[2] == pytest.approx(REFERENCE_KEYPOINTS_M[0], abs=1e-2)
+
+
+def test_project_track_accepts_nested_lists_as_loaded_from_json_cache(known_affine_matrix):
+    homography = estimate_homography(_synthetic_pixel_points(known_affine_matrix))
+    point_px = court_to_pixel(REFERENCE_KEYPOINTS_M[3], homography)
+
+    from_cache = project_track([point_px], [homography.tolist()])
+
+    assert from_cache[0] == pytest.approx(REFERENCE_KEYPOINTS_M[3], abs=1e-2)

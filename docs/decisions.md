@@ -164,3 +164,62 @@ Also reran through our own `src/perception/` wrapper modules (not just vendor's
 footage, not just the vendored reference script: keypoints + homography detected on
 428/428 frames, ball on 287/428, 9 bounce frames found. Cached to
 `data/processed/xenia_720p/`. M1 is done.
+
+## 2026-07-31 — Phase 3: speed is measured by peak window, and refuses to answer when it can't
+`src/analysis/speed.py` reports km/h **with an uncertainty band**, never a bare number.
+Two error sources are modelled explicitly:
+
+* Random (`DEFAULT_POSITION_UNCERTAINTY_M = 0.15`): at 30 fps one frame pair spans 33 ms,
+  so 15 cm of position error alone is ~20 km/h. Speed is therefore measured
+  endpoint-to-endpoint across a window (error ~ sigma*sqrt(2)/T, shrinking with window
+  duration) rather than by differencing consecutive frames, which amplifies noise at
+  every step.
+* Systematic (`MONOCULAR_UNDERESTIMATE_ALLOWANCE = 0.15`): a single camera recovers only
+  ground-plane motion, so a ball with vertical travel covers more 3D distance than we
+  measure. The band is asymmetric upward for this reason.
+
+**Endpoint displacement was wrong as the per-shot number.** Between two bounces the ball
+arcs out and back, so *net* displacement collapses toward zero; on real clips this
+reported 0 km/h for genuine shots and 5-22 km/h for rallies. `peak_speed()` (a sliding
+0.25 s window, max over the segment) is the per-shot number to report --
+`peak_speeds_between_bounces()` is the intended entrypoint. `speeds_between_bounces()` is
+kept for segment-average use but is not the shot speed.
+
+**Guards added after real-data sanity checks, not from theory.** Unguarded, the module
+produced `862 km/h (839-1017)` from a 2-sample, 0.03 s window: correct arithmetic on
+broken tracking data, presented with a confident-looking narrow band. Added
+`MAX_PLAUSIBLE_SPEED_KMH` (260; fastest recorded serve ~263), `MIN_WINDOW_S`,
+`MIN_SAMPLES`, `MIN_COVERAGE` (a window whose endpoints straddle a tracking gap says
+nothing about the motion between them, and `peak_speed`, being a maximum, actively seeks
+such windows out), and `reject_implausible_positions()` (ball tracking sometimes locks
+onto the crowd/fence, projecting 14 m behind the baseline). All are parameters, not
+constants, so callers can trade safety for recall. `estimate_speed` returns None rather
+than a number it cannot support -- callers must treat None as "unknown", not zero.
+
+### Validation result: trustworthy on clean tracking, not yet on the amateur clips
+Broadcast clip (`input_video_720p`, ball detected on 201/214 frames): per-flight peaks of
+**138 / 137 / 143 km/h** -- textbook professional rally groundstroke speeds. Good signal
+that the geometry, units, and window logic are right.
+
+User footage (`xenia_720p` 287/428 frames, `xenia2` 338/687): peaks of 213-259 km/h, which
+are not credible for club tennis and sit suspiciously just under the 260 cap. Diagnosed to
+a specific window (frames 318-326): the ball moved ~13 px between frames 318 and 320 but
+that mapped to **5.5 m** of court distance. Near the far baseline the homography's
+meters-per-pixel is enormous, so sub-pixel jitter becomes tens of km/h; combined with
+every-other-frame dropouts, that manufactures fake peaks. Tracking also jumped between the
+far court and the bottom of frame, indicating lost target.
+
+This is a property of ground-plane homography plus footage quality, **not** something more
+heuristics should hide -- development-plan.md §8 already flags footage quality (>=60 fps,
+fixed tripod) as the risk that caps everything downstream. Two concrete follow-ups, neither
+done here:
+1. **Position-dependent uncertainty.** Replace the constant 0.15 m with a per-point value
+   derived from the homography Jacobian at that pixel (meters-per-pixel locally). A
+   far-court measurement would then carry a correspondingly huge band and self-identify as
+   low confidence, instead of reporting "248 km/h (245-289)". This is the principled fix
+   and should come before any further tuning of thresholds.
+2. **Better footage**: >=60 fps materially shortens the usable window and improves tracking
+   density; the plan already calls for it.
+
+Until then: treat speed as validated on dense/clean tracking only, and do not present
+per-shot speeds from the current amateur clips as accurate.

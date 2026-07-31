@@ -103,3 +103,25 @@ def court_to_pixel(point_m, homography_matrix):
     """Map a single (x, y) court-meters point back to video pixels."""
     inverse = np.linalg.inv(homography_matrix)
     return pixel_to_court(point_m, inverse)
+
+
+def project_track(points_px, homography_matrices):
+    """Map a per-frame pixel track to court meters, frame by frame.
+
+    Each frame uses its own homography, so a camera that drifts slightly between
+    frames still maps correctly. Frames where either the point or the homography is
+    missing come back as None rather than being dropped, so the result stays
+    index-aligned with the input (downstream speed/in-out code indexes by frame).
+
+    :param points_px: per-frame (x, y) pixel points, or None where undetected
+    :param homography_matrices: per-frame 3x3 pixel->meters matrices (np.ndarray or
+        nested list, as loaded from the JSON cache), or None where unavailable
+    :return: list of (x, y) court-meters tuples, or None per frame
+    """
+    projected = []
+    for point, matrix in zip(points_px, homography_matrices):
+        if point is None or matrix is None:
+            projected.append(None)
+        else:
+            projected.append(pixel_to_court(point, np.asarray(matrix, dtype=np.float64)))
+    return projected
