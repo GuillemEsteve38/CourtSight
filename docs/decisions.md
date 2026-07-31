@@ -65,9 +65,17 @@ ratio as the original 1920×1080 clip, so a plain `cv2.resize` works, no letterb
 Reran on the resized clip to confirm both the keypoint offset and missing player were fixed.
 SETUP.md already warned "resize/letterbox if your source differs" — this is why it matters:
 it's not just about matching output quality, the homography math silently breaks. Anyone
-supplying their own footage in Phase 1+ must resize/letterbox to 1280×720 first; consider
-adding this as an automatic preprocessing step in `src/pipeline.py` rather than relying on
-users to do it manually.
+supplying their own footage in Phase 1+ must resize/letterbox to 1280×720 first.
+
+**Resolved 2026-07-31** — this kept recurring (hit again on `xenia.mp4` and `xenia2.mp4`,
+both 848×478) since fixing it manually each time relied on remembering to. Automated it:
+`src/perception/video_io.py`'s `ensure_target_resolution()` resizes in-memory frames to
+1280×720 whenever the source aspect ratio is within 2% of 16:9, and raises a clear error
+instead of silently distorting the court otherwise (true letterboxing for non-16:9 sources
+is still unimplemented — out of scope until footage that actually needs it shows up).
+`scripts/run_perception.py` calls it automatically. `vendor/TennisProject/main.py` itself is
+NOT patched (still vendored, read-only reference) — anyone running it directly still needs
+to pre-resize manually, same as SETUP.md describes.
 
 ## 2026-07-31 — Phase 1: own meters-based court reference instead of vendor's pixel scale
 `src/perception/homography.py` defines its own `REFERENCE_KEYPOINTS_M`, a 14-point court
