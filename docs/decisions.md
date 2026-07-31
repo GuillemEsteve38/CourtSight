@@ -68,3 +68,40 @@ it's not just about matching output quality, the homography math silently breaks
 supplying their own footage in Phase 1+ must resize/letterbox to 1280×720 first; consider
 adding this as an automatic preprocessing step in `src/pipeline.py` rather than relying on
 users to do it manually.
+
+## 2026-07-31 — Phase 1: own meters-based court reference instead of vendor's pixel scale
+`src/perception/homography.py` defines its own `REFERENCE_KEYPOINTS_M`, a 14-point court
+model in real meters (standard ITF doubles dimensions: 23.77m x 10.97m, singles inset
+1.37m, service line 6.40m from net), with the same point ordering as vendor's
+`CourtReference.key_points` in `vendor/TennisProject/court_reference.py`. Considered instead
+reusing vendor's `CourtReference` pixel-space model (its own reference image is drawn at an
+arbitrary ~101.5 px/meter scale) and converting via a fixed scale factor, but that requires
+importing vendor code into what should be a pure, GPU-free, always-testable module, and
+carries an extra indirection (video-px → vendor-ref-px → meters) for no benefit — verified
+by reverse-engineering vendor's own pixel constants that they already correspond almost
+exactly to real ITF measurements (e.g. their service-line-to-net distance converts to
+6.39m vs the regulation 6.40m), so defining our own meters model directly is equivalent and
+simpler. Consequence: `src/perception/court_detection.py` does NOT reuse vendor's own
+`homography_matrices` output (video-px → vendor-ref-px, inverted internally in
+`court_detection_net.py`) at all — it only keeps vendor's reprojected `kps_court` (14
+keypoints reprojected into video-pixel space) and computes its own pixel→meters homography
+via `estimate_homography()`. If Phase 2's in/out geometry ever needs vendor's exact internal
+scale for cross-checking, it's recoverable from `court_reference.py`'s constants, but there's
+no known reason to.
+
+## 2026-07-31 — Phase 1: vendor code imported via sys.path, not as an installed package
+`vendor/TennisProject`'s files use flat imports (e.g. `from tracknet import BallTrackerNet`)
+that only resolve if the vendor directory itself is on `sys.path` — they're a vendored
+reference script collection (see CLAUDE.md), not a pip-installable package, and per
+CLAUDE.md/SETUP.md conventions we don't modify vendored code. `src/perception/_vendor_bridge.py`
+inserts `vendor/TennisProject` onto `sys.path` once, called by `court_detection.py`,
+`ball_tracking.py`, and `bounce_detection.py` before their vendor imports. Tradeoff: this
+mutates global interpreter state (`sys.path`) and vendor module names (`tracknet`,
+`homography`, `utils`, etc.) become globally importable bare names for the rest of the
+process, which could theoretically shadow an unrelated same-named module elsewhere in this
+project — acceptable here since this is a small, self-contained repo and the alternative
+(vendoring TennisProject as a proper installable package, or copying/adapting its source
+into `src/`) is much more invasive for a pipeline we're already told to treat as read-only
+upstream reference. `src/perception/homography.py` itself has no vendor dependency at all
+(see the decision above), so the one module that must stay GPU/weights-free for testing is
+unaffected by this.
