@@ -105,3 +105,27 @@ into `src/`) is much more invasive for a pipeline we're already told to treat as
 upstream reference. `src/perception/homography.py` itself has no vendor dependency at all
 (see the decision above), so the one module that must stay GPU/weights-free for testing is
 unaffected by this.
+
+## 2026-07-31 — Phase 2: in/out confidence model and service-box scope
+`src/analysis/in_out.py`'s `classify_bounce()` computes a signed distance from the bounce
+point to the relevant court region (`src/scoring/rules.py`'s axis-aligned `Rect`s) and maps
+it to a confidence in `[MIN_CONFIDENCE=0.5, 1.0]`: 0.5 right on the line (a coin flip),
+ramping linearly to 1.0 at `CONFIDENCE_FULL_CERTAINTY_MARGIN_M=0.10` (10cm) away in either
+direction. `tolerance_m` (default 0.05m, roughly a line's width plus homography slack) is a
+separate parameter controlling where "in" vs "out" flips, so a ball just past the true
+boundary but within tolerance is still called in (matching real line-touch rules) albeit
+with reduced confidence. `tracking_confidence` (default 1.0) is an external multiplier the
+caller supplies — the module deliberately does NOT try to estimate ball-tracking quality
+itself (e.g. from gaps in the cached trajectory near the bounce frame); that's a concern of
+whichever stage calls `classify_bounce()` with real data (likely `src/pipeline.py` or a
+future rally-segmentation step), keeping this module pure geometry and independently
+testable. Also: service boxes are modeled as always singles-width regardless of match type
+(`court_type` only affects "rally" shots) -- this matches the actual ITF rule that serves
+must land within the singles-width box even in doubles play. `src/scoring/rules.py`
+re-defines the same four ITF constants (23.77/10.97/8.23/6.40m) already in
+`src/perception/homography.py` rather than importing them, keeping perception and scoring
+decoupled per the module boundaries in CLAUDE.md; both cite the same public regulation
+numbers so they can't drift independently in a way that matters. Not yet handled: which
+specific service box is "correct" for a given serve depends on score state (deuce/ad court)
+that only Phase 4's scoring engine will know -- `classify_bounce()` takes `service_box` as
+a required caller-supplied argument for serves rather than guessing it.

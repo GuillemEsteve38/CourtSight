@@ -4,7 +4,7 @@
 SwingVision-style app: upload a fixed-camera tennis match video → ball tracking, in/out calls on bounces, per-shot speed estimates, and a running score (human-in-the-loop confirmed). Full scope, non-goals, and phased roadmap live in [docs/development-plan.md](docs/development-plan.md) — read it before starting any phase.
 
 ## Current phase
-**Phase 1 — Perception on your own footage.** Phase 0 done (M0 — pretrained TennisProject pipeline verified end-to-end on a sample clip, GPU-accelerated locally). Next: wrap TennisProject inference into `src/perception/` modules with a clean, cached API.
+**Phase 2 — In/Out engine (custom).** Phase 0 done (M0). Phase 1's perception wrapper modules (`src/perception/`) are built and validated on the Phase 0 sample clip, but not yet validated on the user's own footage — that validation is still pending and gates M1. Now building the in/out line-calling engine (`src/scoring/rules.py`, `src/analysis/in_out.py`), which is pure custom logic and doesn't require real footage to develop/test.
 
 ## Compute
 This dev machine has a local NVIDIA GeForce RTX 3070 Laptop GPU (8GB VRAM, driver reports CUDA 13.1) alongside its AMD integrated graphics — GPU inference (Phase 0 pipeline run, Phase 1 perception extraction) runs locally via CUDA-enabled torch/torchvision (cu121 wheels). No separate NVIDIA machine is needed. See `docs/decisions.md` for the correction from the original (incorrect) AMD-only assumption.
