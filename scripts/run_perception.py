@@ -5,8 +5,9 @@ Usage (from the repo root, with .venv active):
 
     python scripts/run_perception.py --input data/samples/xenia_720p.mp4
 
-Input video must be exactly 1280x720 -- resize/letterbox first if it isn't (see
-SETUP.md and docs/decisions.md for why the vendored models assume this resolution).
+Input video is auto-resized to 1280x720 if it isn't already (the resolution the
+vendored models assume -- see docs/decisions.md). This only works for sources
+close to 16:9; anything else must be letterboxed manually first (see SETUP.md).
 """
 
 import argparse
@@ -41,12 +42,13 @@ def main():
     frames, fps = video_io.read_frames(input_path)
     print(f"read {len(frames)} frames at {fps:.2f} fps from {input_path}")
     width, height = frames[0].shape[1], frames[0].shape[0]
-    if (width, height) != (1280, 720):
-        print(
-            f"WARNING: input is {width}x{height}, not 1280x720 -- court/ball detection "
-            "will likely be wrong or crash. Resize/letterbox first (see SETUP.md).",
-            file=sys.stderr,
-        )
+    if (width, height) != (video_io.TARGET_WIDTH, video_io.TARGET_HEIGHT):
+        try:
+            frames = video_io.ensure_target_resolution(frames)
+        except ValueError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            sys.exit(1)
+        print(f"  resized from {width}x{height} to {video_io.TARGET_WIDTH}x{video_io.TARGET_HEIGHT}")
 
     print("running court detection...")
     court_result = court_detection.detect_court(frames, weights_dir / "court_detector.pt", device=args.device)
