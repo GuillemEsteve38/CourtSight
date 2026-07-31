@@ -129,3 +129,30 @@ numbers so they can't drift independently in a way that matters. Not yet handled
 specific service box is "correct" for a given serve depends on score state (deuce/ad court)
 that only Phase 4's scoring engine will know -- `classify_bounce()` takes `service_box` as
 a required caller-supplied argument for serves rather than guessing it.
+
+## 2026-07-31 — M1 achieved: pipeline validated on real user footage (not broadcast)
+Ran `vendor/TennisProject/main.py` on `data/samples/xenia.mp4`, the user's own club-court
+footage (two players, non-broadcast camera/lighting/angle) -- this is the actual Phase 1
+goal (§6 M1 "It sees my court"), distinct from the Phase 0 sample clip which was a
+downloaded ATP broadcast. Hit the exact same resolution bug as Phase 0: `xenia.mp4` is
+848x478, not 1280x720, so `court_detection_net.py`'s hardcoded `scale=2`
+reprojection produced out-of-bounds crop coordinates in `postprocess.py:refine_kps()` ->
+`detect_lines()` -> `cv2.cvtColor` raising `(-215:Assertion failed) !_src.empty()` (crop
+slice with start > stop is empty in numpy). Fix: same as before, resize to exactly
+1280x720 (`xenia_720p.mp4`) -- 848x478's aspect ratio is 0.2% off from 16:9 so a plain
+`cv2.resize` introduces no visible distortion. Confirms the resolution assumption is a
+systemic gotcha for any footage that isn't natively 1280x720, not a one-off; worth adding
+an explicit resize/letterbox check (with a clear error or auto-fix) to whatever ingests
+video in `src/pipeline.py` (Phase 5), rather than relying on remembering to preprocess.
+
+Visually verified 3 sampled frames from the annotated output: court keypoints land
+precisely on real line intersections/corners despite different lighting, camera angle,
+and court color/surface than the Phase 0 broadcast clip -- the risk called out in
+development-plan.md §8 ("court detection may fail on your court color/angle") did not
+materialize here. Both players detected and tracked throughout.
+
+Also reran through our own `src/perception/` wrapper modules (not just vendor's
+`main.py`) on the resized clip to confirm the actual code deliverable works on real
+footage, not just the vendored reference script: keypoints + homography detected on
+428/428 frames, ball on 287/428, 9 bounce frames found. Cached to
+`data/processed/xenia_720p/`. M1 is done.
