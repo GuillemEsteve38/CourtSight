@@ -1,16 +1,20 @@
 # Core ML / inference (TrackNet, court detector, bounce model).
 # TennisProject's own requirements.txt pins torch==1.5.0 / torchvision==0.6.0 (2020-era) —
-# too old for a modern CUDA/driver stack. Install torch/torchvision separately on the
-# NVIDIA machine using the command from https://pytorch.org/get-started/locally/ matched
-# to that machine's CUDA version, then install the rest of this file.
+# too old for a modern CUDA/driver stack. Install torch/torchvision separately using the
+# command from https://pytorch.org/get-started/locally/ matched to the local GPU's CUDA
+# version (this repo's dev machine: RTX 3070 Laptop GPU, driver reports CUDA 13.1 — cu121
+# wheels install and detect the GPU fine), then install the rest of this file.
+#
+# Python 3.11 is the tested runtime for the scientific stack used by this repo.
 torch>=2.1
 torchvision>=0.16
-catboost==1.1.1
-numpy<2.0
-scipy
-pandas
-opencv-python
-scenedetect
+catboost>=1.2.10
+numpy>=1.26,<2.0
+scipy<1.14
+pandas<2.3
+opencv-python-headless<4.11
+opencv-python<4.11  # scenedetect depends on this; pin to match opencv-python-headless so pip doesn't resolve two mismatched cv2 builds
+scenedetect==0.6.7.1  # vendor/TennisProject/utils.py uses the VideoManager API, removed in scenedetect 0.7; see docs/decisions.md
 sympy
 tqdm
 matplotlib

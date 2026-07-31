@@ -1,10 +1,9 @@
 # Phase 0 Setup — Run the pretrained TennisProject pipeline
 
-This machine (AMD RX 580, no CUDA) cannot run inference. All steps below marked
-**[NVIDIA machine]** must be run on a separate machine with an NVIDIA GPU. Steps
-marked **[either machine]** are just file management and can be done anywhere.
+This machine has a local NVIDIA GeForce RTX 3070 Laptop GPU (8GB VRAM, driver reports
+CUDA 13.1), so everything below runs here — no separate inference machine needed.
 
-## 1. Clone the reference repo **[NVIDIA machine]**
+## 1. Clone the reference repo
 
 ```bash
 git clone https://github.com/yastrebksv/TennisProject.git vendor/TennisProject
@@ -15,7 +14,22 @@ We treat this as a vendored reference, not a dependency of this repo — we read
 code to build our own `src/perception/` modules in Phase 1, but Phase 0 just proves
 the pipeline runs.
 
-## 2. Install PyTorch matched to your CUDA version **[NVIDIA machine]**
+## 2. Create and use a virtual environment
+
+This project needs a Python 3.11 runtime — a newer interpreter on this machine (3.14)
+breaks the scientific stack the pipeline depends on.
+
+Install Python 3.11 first (for example from python.org or the Microsoft Store), then create the environment from that interpreter:
+
+```bash
+C:\Path\To\Python311\python.exe -m venv .venv
+.venv\Scripts\activate
+python -m pip install --upgrade pip setuptools wheel
+```
+
+If you are using VS Code, select the interpreter at `.venv\Scripts\python.exe` so the editor uses the same environment (already configured in `.vscode/settings.json`).
+
+## 3. Install PyTorch matched to your CUDA version
 
 Check your driver/CUDA version first:
 
@@ -24,8 +38,9 @@ nvidia-smi
 ```
 
 Then get the matching install command from https://pytorch.org/get-started/locally/
-(pick Stable, your OS, Pip, Python, and the CUDA version `nvidia-smi` reports). Example
-for CUDA 12.1:
+(pick Stable, your OS, Pip, Python, and the CUDA version `nvidia-smi` reports). This
+machine's driver reports CUDA 13.1, and the cu121 wheels install and detect the GPU
+fine:
 
 ```bash
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
@@ -34,48 +49,55 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 Do **not** use the `torch==1.5.0` pin from TennisProject's own `requirements.txt` —
 it predates modern CUDA/driver support.
 
-## 3. Install remaining dependencies **[NVIDIA machine]**
-
-From this repo's root (copy or clone this repo onto the NVIDIA machine too):
+## 4. Install the rest of the dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## 4. Download pretrained weights **[NVIDIA machine]**
+`requirements.txt` already pins `torch`/`torchvision` too (unpinned version range) —
+reinstalling from step 3's CUDA-specific index first, then running this, is what
+gives you the CUDA build instead of pip silently grabbing a CPU-only wheel.
+
+## 5. Download pretrained weights
 
 All three are Google Drive links — download manually in a browser (gdown often gets
 rate-limited on these) and place them under `data/weights/`:
 
 | Model | Link | Suggested filename |
 |---|---|---|
-| Ball tracking (TrackNet) | https://github.com/yastrebksv/TrackNet — see repo README for current weight link | `data/weights/tracknet.pth` |
-| Court detection | https://drive.google.com/file/d/1f-Co64ehgq4uddcQm1aFBDtbnyZhQvgG/view | `data/weights/court_detector.pth` |
+| Ball tracking (TrackNet) | https://github.com/yastrebksv/TrackNet — see repo README for current weight link | `data/weights/tracknet.pt` |
+| Court detection | https://drive.google.com/file/d/1f-Co64ehgq4uddcQm1aFBDtbnyZhQvgG/view | `data/weights/court_detector.pt` |
 | Bounce detection (CatBoost) | https://drive.google.com/file/d/1Eo5HDnAQE8y_FbOftKZ8pjiojwuy2BmJ/view | `data/weights/bounce_detector.cbm` |
 
 **Gotcha:** the ball-tracking weight link lives in the TrackNet repo, not TennisProject
 directly — check that repo's README for the current Drive link before downloading, in
 case it's moved.
 
-## 5. Get a sample clip **[either machine]**
+## 6. Get a sample clip
 
 Drop one short rally clip at **1280×720** into `data/samples/` (this is the resolution
 TennisProject's models expect — resize/letterbox if your source differs). Per the
 development plan, don't worry about your own footage yet; a downloaded/trimmed
 broadcast clip is fine for Phase 0.
 
-## 6. Run inference **[NVIDIA machine]**
+## 7. Run inference
 
 ```bash
-python vendor/TennisProject/main.py \
-  --path_ball_track_model data/weights/tracknet.pth \
-  --path_court_model data/weights/court_detector.pth \
+.venv\Scripts\python.exe vendor/TennisProject/main.py \
+  --path_ball_track_model data/weights/tracknet.pt \
+  --path_court_model data/weights/court_detector.pt \
   --path_bounce_model data/weights/bounce_detector.cbm \
   --path_input_video data/samples/<your_clip>.mp4 \
   --path_output_video data/samples/<your_clip>_annotated.mp4
 ```
 
-## 7. Verify **[either machine]**
+Run this from the repository root, not from inside `vendor/TennisProject/`, and make
+sure the virtual environment is activated first. `main.py` auto-detects CUDA
+(`device = 'cuda' if torch.cuda.is_available() else 'cpu'`) — no flag needed to use
+the GPU, just make sure step 3 installed a CUDA build of torch.
+
+## 8. Verify
 
 Open `data/samples/<your_clip>_annotated.mp4` and confirm:
 - Court lines/keypoints are overlaid correctly
@@ -96,3 +118,6 @@ failure points (see development-plan.md §6 Phase 0 gotchas).
   against. If inference produces garbage output (not just a crash), this is a
   suspect — note it in `docs/decisions.md` and consider pinning closer to their
   versions in a dedicated venv.
+- `vendor/TennisProject/utils.py` uses the pre-1.0 PySceneDetect `VideoManager` API,
+  removed in scenedetect 0.7 — `requirements.txt` pins `scenedetect==0.6.7.1` to match;
+  see `docs/decisions.md`.

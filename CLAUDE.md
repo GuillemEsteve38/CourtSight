@@ -7,7 +7,7 @@ SwingVision-style app: upload a fixed-camera tennis match video → ball trackin
 **Phase 0 — Environment & baseline validation.** Repo scaffolded, reference repos surveyed. Next: get the pretrained TennisProject pipeline running end-to-end on a sample clip.
 
 ## Compute
-No local NVIDIA GPU (this dev machine has an AMD Radeon RX 580 — no CUDA). All GPU-heavy inference (Phase 0 pipeline run, Phase 1 perception extraction) runs on a **separate NVIDIA machine**, operated by the user. Claude Code writes/tests code here; the user runs inference elsewhere and pastes back results, errors, and output files.
+This dev machine has a local NVIDIA GeForce RTX 3070 Laptop GPU (8GB VRAM, driver reports CUDA 13.1) alongside its AMD integrated graphics — GPU inference (Phase 0 pipeline run, Phase 1 perception extraction) runs locally via CUDA-enabled torch/torchvision (cu121 wheels). No separate NVIDIA machine is needed. See `docs/decisions.md` for the correction from the original (incorrect) AMD-only assumption.
 
 ## Architecture
 
