@@ -14,7 +14,6 @@ Run it:  uvicorn app.backend.main:app --reload
 """
 
 import os
-import shutil
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -35,6 +34,13 @@ WEIGHTS_DIR = Path(os.environ.get("COURTSIGHT_WEIGHTS_DIR", REPO_ROOT / "data" /
 FRONTEND_DIST = REPO_ROOT / "app" / "frontend" / "dist"
 
 ALLOWED_SUFFIXES = {".mp4", ".mov", ".avi", ".mkv"}
+
+# Uploads are streamed to disk, so this guards disk rather than RAM. It is generous
+# relative to what analysis can actually handle (see video_io's frame budget) --
+# a clip that fits here can still be rejected later for being too long, which is the
+# right order: cheap check first, and the length error explains itself.
+MAX_UPLOAD_BYTES = int(os.environ.get("COURTSIGHT_MAX_UPLOAD_MB", "2048")) * 1024 * 1024
+UPLOAD_CHUNK_BYTES = 1024 * 1024
 # Rendering the annotated video roughly doubles the wall time, so it's the last 25%
 # of reported progress rather than a silent extra wait after "analysis complete".
 RENDER_PROGRESS_SHARE = 0.25
@@ -80,15 +86,41 @@ def create_job(file: UploadFile = File(...)):
             detail=f"unsupported file type {suffix!r}; expected one of {sorted(ALLOWED_SUFFIXES)}",
         )
 
+    if not WEIGHTS_DIR.is_dir():
+        raise HTTPException(
+            status_code=503,
+            detail=f"model weights not found at {WEIGHTS_DIR} -- see SETUP.md step 5",
+        )
+
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     job = store.create(filename=file.filename, video_path=UPLOAD_DIR / "pending")
     destination = UPLOAD_DIR / f"{job.id}{suffix}"
 
-    # Streamed to disk rather than read into memory: match videos are large.
-    with open(destination, "wb") as out:
-        shutil.copyfileobj(file.file, out)
-    job.update(video_path=destination)
+    # Streamed in chunks rather than read whole: match videos are large, and the size
+    # limit has to be enforced as we go since Content-Length can be absent or lie.
+    written = 0
+    try:
+        with open(destination, "wb") as out:
+            while chunk := file.file.read(UPLOAD_CHUNK_BYTES):
+                written += len(chunk)
+                if written > MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=(
+                            f"upload exceeds {MAX_UPLOAD_BYTES // 1024 // 1024} MB; "
+                            "trim the clip or raise COURTSIGHT_MAX_UPLOAD_MB"
+                        ),
+                    )
+                out.write(chunk)
+    except Exception:
+        destination.unlink(missing_ok=True)  # never leave a partial file behind
+        raise
 
+    if written == 0:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="uploaded file is empty")
+
+    job.update(video_path=destination)
     store.submit(job, _analyze)
     return job.to_dict()
 

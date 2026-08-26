@@ -1,6 +1,7 @@
 import pytest
 
 from src.perception.court_detection import CourtDetectionResult
+from src.perception.homography import REFERENCE_KEYPOINTS_M
 from src.pipeline import STAGE_WEIGHTS, build_analysis, cache_dir_for
 from src.scoring import rules
 
@@ -256,6 +257,113 @@ def test_progress_frames_handles_an_empty_list():
 
 
 # --- Cache location --------------------------------------------------------------------------
+
+# --- Fixed-camera optimisations ------------------------------------------------------
+# Both trade on v1's explicit fixed-camera scope; these pin the pure parts.
+
+def test_expand_samples_maps_sampled_results_onto_every_frame():
+    from src.perception.court_detection import _expand_samples
+
+    expanded = _expand_samples([0, 10, 20], ["a", "b", "c"], total=25)
+
+    assert len(expanded) == 25
+    assert expanded[0] == "a"
+    assert expanded[4] == "a", "nearer to sample 0"
+    assert expanded[6] == "b", "nearer to sample 10"
+    assert expanded[24] == "c"
+
+
+def test_consolidate_takes_the_median_so_one_bad_frame_cannot_dominate():
+    from src.perception.court_detection import consolidate_fixed_camera
+
+    good = [(100.0, 200.0)] * 14
+    outlier = [(9000.0, 9000.0)] * 14
+    result = CourtDetectionResult(
+        keypoints_px=[good] * 9 + [outlier],
+        homography_m=[None] * 10,
+    )
+
+    consolidated = consolidate_fixed_camera(result)
+
+    assert consolidated.keypoints_px[0][0] == (100.0, 200.0), "outlier must not shift the median"
+
+
+def test_consolidate_applies_one_homography_to_every_frame():
+    from src.perception.court_detection import consolidate_fixed_camera
+
+    keypoints = [px(m) for m in REFERENCE_KEYPOINTS_M]
+    result = CourtDetectionResult(keypoints_px=[keypoints] * 12, homography_m=[None] * 12)
+
+    consolidated = consolidate_fixed_camera(result)
+
+    matrices = consolidated.homography_m
+    assert all(m == matrices[0] for m in matrices), "a fixed camera has one homography"
+    assert len(matrices) == 12
+
+
+def test_consolidate_is_a_noop_with_too_few_detections():
+    from src.perception.court_detection import consolidate_fixed_camera
+
+    result = CourtDetectionResult(keypoints_px=[None] * 10, homography_m=[None] * 10)
+
+    assert consolidate_fixed_camera(result) is result
+
+
+def test_consolidate_recovers_the_true_homography_from_noisy_frames():
+    """The point of consolidation: averaging noisy samples of one constant."""
+    import random
+
+    from src.perception.court_detection import consolidate_fixed_camera
+    from src.perception.homography import pixel_to_court
+
+    random.seed(7)
+    truth = [px(m) for m in REFERENCE_KEYPOINTS_M]
+    noisy = [
+        [(x + random.gauss(0, 3), y + random.gauss(0, 3)) for x, y in truth]
+        for _ in range(60)
+    ]
+    result = CourtDetectionResult(keypoints_px=noisy, homography_m=[None] * 60)
+
+    consolidated = consolidate_fixed_camera(result)
+
+    import numpy as np
+
+    recovered = pixel_to_court((640.0, 400.0), np.array(consolidated.homography_m[0]))
+    expected = (640.0 / 100, 400.0 / 100)
+    assert recovered == pytest.approx(expected, abs=0.15)
+
+
+def test_missing_weights_fail_early_with_an_actionable_message(tmp_path):
+    from src.pipeline import _require_weights
+
+    with pytest.raises(FileNotFoundError) as excinfo:
+        _require_weights(tmp_path)
+
+    message = str(excinfo.value)
+    assert "court_detector.pt" in message
+    assert "SETUP.md" in message
+
+
+def test_weights_check_passes_when_all_present(tmp_path):
+    from src.pipeline import REQUIRED_WEIGHTS, _require_weights
+
+    for name in REQUIRED_WEIGHTS:
+        (tmp_path / name).write_bytes(b"weights")
+
+    _require_weights(tmp_path)  # must not raise
+
+
+def test_weights_check_names_only_what_is_missing(tmp_path):
+    from src.pipeline import _require_weights
+
+    (tmp_path / "court_detector.pt").write_bytes(b"w")
+
+    with pytest.raises(FileNotFoundError) as excinfo:
+        _require_weights(tmp_path)
+
+    assert "court_detector.pt" not in str(excinfo.value)
+    assert "tracknet.pt" in str(excinfo.value)
+
 
 def test_cache_dir_is_derived_from_the_clip_name():
     assert cache_dir_for("data/samples/xenia_720p.mp4").name == "xenia_720p"

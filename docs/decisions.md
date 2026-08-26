@@ -326,3 +326,68 @@ actually looks at.
 Uploaded `xenia2.mp4` through the running server: job queued, progressed through all five
 stages, produced a result identical to the CLI (same 3 bounces, 2 shots, 2 rallies) and a
 38 MB annotated video served over HTTP. The built frontend is served by FastAPI from `/`.
+
+## 2026-07-31 — Phase 6: frame budget, and exploiting the fixed camera for a 2.4x speedup
+
+### Memory is the hard limit on clip length, so it fails loudly now
+`video_io` holds every decoded frame in RAM: 2.64 MB per 1280x720 frame, so ~1.8 GB for
+20 seconds and ~4.6 GB per minute. On the 15.3 GB dev machine (2.6 GB free at the time of
+measuring) anything over about a minute would have OOM'd or sent the machine swapping,
+with no useful error. Two fixes:
+
+* `ensure_target_resolution` now resizes **in place**. Building a second list meant the
+  original and resized frames coexisted; measured peak for a 23s clip dropped from
+  ~2.6 GB to 1.77 GB. It mutates its argument, which is a real side effect -- documented
+  in the docstring and pinned by a test rather than left as a surprise.
+* `read_frames` refuses clips above `DEFAULT_MAX_FRAMES` (2400, ~80s at 30fps, ~6.3 GB),
+  checked against container metadata *before* decoding so it fails in milliseconds, and
+  again while reading because metadata can lie. The error states the estimated RAM and
+  how to override it.
+
+Streaming instead of buffering is not available: the vendored models take a frame *list*,
+not an iterator, so streaming means reimplementing their inference loops.
+
+### The per-frame homography is mostly noise, and the camera never moves
+Measured on `xenia2`: projecting one fixed pixel through each frame's homography moves it
+with a standard deviation of **37 cm** in court metres (33.6 cm on `xenia_720p`). Checked
+whether that was camera drift or detection jitter -- it is jitter: the values oscillate
+around a stable mean with no trend, median frame-to-frame change 4.8 cm. Notably the
+broadcast clip shows only **2.4 cm**, so this is a symptom of weak court detection on
+amateur footage, not a universal property.
+
+37 cm of noise is seven times the 5 cm tolerance the in/out engine uses to decide a line
+call. Since v1 explicitly assumes a fixed camera, there is exactly *one* true homography
+and the per-frame estimates are noisy samples of it. Two changes follow:
+
+* `detect_court(sample_every=N)` runs inference on every Nth frame and reuses the nearest
+  result. Court detection was by far the slowest stage: **90.4s -> 8.5s at N=10, a 10.6x
+  speedup**; ball tracking is now the bottleneck, and `STAGE_WEIGHTS` was rebalanced to
+  match so the progress bar stays honest.
+* `consolidate_fixed_camera()` takes the per-keypoint **median** across frames (median,
+  not mean, so one badly-detected frame cannot drag the court sideways) and applies the
+  resulting single homography everywhere.
+
+Both default on, and both are wrong for moving footage -- `court_sample_every=1,
+fixed_camera=False` restores the old behaviour.
+
+**Validation.** End-to-end on `xenia2`: 124.8s -> 51.5s, **2.42x faster**, with
+*identical* bounce in/out calls and identical rally proposals. Across all three clips no
+in/out call changed, though consolidation moved individual bounce positions by up to
+63 cm on the noisy amateur clips (and by under 1.5 cm on the broadcast clip, where there
+was little noise to remove). Shot speeds shifted (259 -> 226 km/h on one flight), but
+both values sit inside the range already documented as unreliable for that footage, so
+this is noise moving rather than a regression.
+
+**What is not claimed:** consolidation demonstrably reduces *variance*, and averaging
+noisy samples of a constant is the right thing to do for a fixed camera. But there is no
+ground-truth court survey for these clips, so it is not claimed as an accuracy
+improvement -- only as less noisy, with no call changed. It is plausibly relevant to the
+Phase 3 speed problem, since noisy court positions were one suspected contributor, but
+that remains unproven and the Jacobian-based fix is still the outstanding work.
+
+### Portfolio work
+README rewritten around real generated output (`docs/media/demo.gif` and
+`annotated-frame.png` are rendered by `src/viz/`, not mocked up), and leads with what the
+system cannot do plus where speeds are and are not trustworthy. A recorded walkthrough
+video and any public deployment are deliberately left to the user: both involve their
+footage, their accounts, and an outward-facing publishing decision.

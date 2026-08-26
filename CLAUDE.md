@@ -4,7 +4,12 @@
 SwingVision-style app: upload a fixed-camera tennis match video → ball tracking, in/out calls on bounces, per-shot speed estimates, and a running score (human-in-the-loop confirmed). Full scope, non-goals, and phased roadmap live in [docs/development-plan.md](docs/development-plan.md) — read it before starting any phase.
 
 ## Current phase
-**Phases 0–5 done; Phase 6 (polish & portfolio) is next.** M0–M4 are complete: the pretrained pipeline runs, perception is validated on real club-court footage, and the in/out engine (`src/analysis/in_out.py`), speed estimator (`src/analysis/speed.py`), scoring engine (`src/scoring/state_machine.py`) and rally segmentation all run end-to-end — from the CLI (`scripts/`) and from a browser (`src/pipeline.py` + FastAPI backend in `app/backend/` + React frontend in `app/frontend/`). 187 tests. See SETUP.md → "Running the app".
+**All six phases (0–6) complete; v1 scope is done.** The pipeline runs end-to-end from CLI (`scripts/`) and browser (`src/pipeline.py` + FastAPI in `app/backend/` + React in `app/frontend/`), validated on real club-court footage. 205 tests, none needing a GPU. See README.md for the overview and SETUP.md → "Running the app" to run it.
+
+**The highest-value outstanding work is accuracy, not features** — see `docs/decisions.md`:
+1. Speed is trustworthy on dense tracking (broadcast: 138/137/143 km/h) but not on the amateur clips (213–259 km/h). Fix is per-point uncertainty from the homography Jacobian, so far-court measurements self-report as low-confidence. Do not tune thresholds to hide this.
+2. Serves are judged with rally rules; correct service-box selection needs the deuce/ad court from the score.
+3. Rally boundaries have never been checked frame-by-frame against video.
 
 Two known accuracy limits are documented in `docs/decisions.md` and should be read before trusting output: **speed** is validated on broadcast footage (138/137/143 km/h) but not on the amateur clips, where perspective amplification near the far baseline inflates it; **rally outcomes** are proposals capped at 0.6 confidence and require human confirmation.
 

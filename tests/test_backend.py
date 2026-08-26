@@ -231,6 +231,37 @@ def test_jobs_can_be_listed(client, no_op_analysis):
     assert {job["filename"] for job in listed} == {"a.mp4", "b.mp4"}
 
 
+# --- Upload edge cases ---------------------------------------------------------------
+
+def test_empty_upload_is_rejected(client, no_op_analysis, tmp_path):
+    response = client.post("/api/jobs", files={"file": ("empty.mp4", b"", "video/mp4")})
+
+    assert response.status_code == 400
+    assert "empty" in response.json()["detail"]
+    assert not list((tmp_path / "uploads").glob("*.mp4")), "no partial file left behind"
+
+
+def test_oversized_upload_is_rejected(client, no_op_analysis, monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "MAX_UPLOAD_BYTES", 1024)
+
+    response = client.post(
+        "/api/jobs", files={"file": ("big.mp4", b"x" * 5000, "video/mp4")}
+    )
+
+    assert response.status_code == 413
+    assert "COURTSIGHT_MAX_UPLOAD_MB" in response.json()["detail"]
+    assert not list((tmp_path / "uploads").glob("*.mp4")), "partial upload cleaned up"
+
+
+def test_upload_is_rejected_when_weights_are_missing(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "WEIGHTS_DIR", tmp_path / "absent")
+
+    response = client.post("/api/jobs", files={"file": ("a.mp4", b"x", "video/mp4")})
+
+    assert response.status_code == 503
+    assert "SETUP.md" in response.json()["detail"]
+
+
 # --- Scoring endpoint ------------------------------------------------------------------
 # Thin wrapper over the tested MatchScorer; these check the wiring, not the tennis rules.
 

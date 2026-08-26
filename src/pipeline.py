@@ -28,14 +28,19 @@ from src.analysis.speed import (
 from src.perception import ball_tracking, bounce_detection, court_detection, video_io
 from src.perception.homography import project_track
 
-# Stage weights for progress reporting, roughly proportional to observed runtime on a
-# ~700-frame clip (court detection is the slowest by a wide margin).
+# Court detection is only run on every Nth frame. Valid because v1 assumes a fixed
+# camera, and measured 10.6x faster on a 687-frame clip (90.4s -> 8.5s) with no in/out
+# call changing on any test clip. See docs/decisions.md.
+DEFAULT_COURT_SAMPLE_EVERY = 10
+
+# Stage weights for progress reporting, proportional to observed runtime on a
+# ~700-frame clip with court sampling enabled (ball tracking is now the slowest stage).
 STAGE_WEIGHTS = {
-    "read": 0.05,
-    "court": 0.55,
-    "ball": 0.30,
-    "bounce": 0.02,
-    "analyze": 0.08,
+    "read": 0.06,
+    "court": 0.12,
+    "ball": 0.68,
+    "bounce": 0.04,
+    "analyze": 0.10,
 }
 
 
@@ -137,12 +142,19 @@ def analyze_video(
     device="cuda",
     force=False,
     progress=None,
+    court_sample_every=DEFAULT_COURT_SAMPLE_EVERY,
+    fixed_camera=True,
 ):
     """Run the full pipeline for one clip, reusing cached inference where possible.
 
     :param progress: optional callback(fraction, stage, message) with fraction in
         [0, 1]. Used by the API's background job to drive a progress bar.
     :param force: re-run inference even if a cache exists
+    :param court_sample_every: run court detection on every Nth frame (fixed camera
+        only). Measured 10.6x faster on the slowest stage at N=10.
+    :param fixed_camera: collapse per-frame court keypoints to their median. Both this
+        and court_sample_every rely on v1's explicit fixed-camera scope; set both off
+        (N=1, fixed_camera=False) for footage where the camera moves.
     :return: AnalysisResult
     """
     video_path = Path(video_path)
@@ -159,6 +171,8 @@ def analyze_video(
 
     weights_dir = Path(weights_dir)
     cached = _load_cache(cache) if not force else None
+    if cached is None:
+        _require_weights(weights_dir)
 
     if cached is not None:
         court_result, ball_track, bounce_frames = cached
@@ -171,7 +185,10 @@ def analyze_video(
             _ProgressFrames(frames, lambda f: report("court", f, "detecting court")),
             weights_dir / "court_detector.pt",
             device=device,
+            sample_every=court_sample_every,
         )
+        if fixed_camera:
+            court_result = court_detection.consolidate_fixed_camera(court_result)
         report("court", 1.0, "court detected")
 
         report("ball", 0.0, "tracking ball")
@@ -309,6 +326,23 @@ def _position_near(court_points, frame, search=3):
             if 0 <= candidate < len(court_points) and court_points[candidate] is not None:
                 return court_points[candidate]
     return None
+
+
+REQUIRED_WEIGHTS = ("court_detector.pt", "tracknet.pt", "bounce_detector.cbm")
+
+
+def _require_weights(weights_dir):
+    """Fail early and legibly when weights are missing.
+
+    Without this the failure surfaces deep inside torch as a bare FileNotFoundError
+    on a .pt path, after the clip has already been decoded into memory.
+    """
+    missing = [name for name in REQUIRED_WEIGHTS if not (weights_dir / name).exists()]
+    if missing:
+        raise FileNotFoundError(
+            f"missing model weights in {weights_dir}: {', '.join(missing)} -- "
+            "download them per SETUP.md step 5"
+        )
 
 
 def _load_cache(cache):
