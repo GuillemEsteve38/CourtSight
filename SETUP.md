@@ -128,13 +128,20 @@ failure points (see development-plan.md §6 Phase 0 gotchas).
 
 ## Backend
 
-```bash
-.venv\Scripts\activate
-uvicorn app.backend.main:app --reload
+Run from the repository root:
+
+```powershell
+.venv\Scripts\python.exe -m uvicorn app.backend.main:app --reload
 ```
 
 Serves the API on http://127.0.0.1:8000. If `app/frontend/dist` exists it also serves the
 built UI at `/`, so this single command is enough to use the app.
+
+Calling the venv's `python.exe` directly avoids needing to activate the venv first — a bare
+`uvicorn ...` only works in an activated shell, and otherwise fails with
+`'uvicorn' is not recognized`. `python -m` also puts the repo root on `sys.path`, which is
+what lets `app.backend` and `src.*` import; running uvicorn from any other directory will
+fail with `ModuleNotFoundError`.
 
 `GET /api/health` reports whether CUDA was found — check it first if analysis is slow.
 
