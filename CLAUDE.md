@@ -4,7 +4,9 @@
 SwingVision-style app: upload a fixed-camera tennis match video → ball tracking, in/out calls on bounces, per-shot speed estimates, and a running score (human-in-the-loop confirmed). Full scope, non-goals, and phased roadmap live in [docs/development-plan.md](docs/development-plan.md) — read it before starting any phase.
 
 ## Current phase
-**Phase 2 — In/Out engine (custom), in progress.** Phase 0 (M0) and Phase 1 (M1 — "It sees my court") are both done: the perception wrapper modules (`src/perception/`) are validated on real user footage (`data/samples/xenia_720p.mp4`, a club court, not broadcast), with correct court keypoints/homography and both players tracked. Phase 2's in/out engine (`src/scoring/rules.py`, `src/analysis/in_out.py`) is implemented and unit-tested.
+**Phases 0–4 done; Phase 5 (application layer) is next.** M0 (pipeline runs) and M1 ("It sees my court", validated on real club-court footage) are complete. Phase 2's in/out engine (`src/scoring/rules.py`, `src/analysis/in_out.py`), Phase 3's speed estimator (`src/analysis/speed.py`), and Phase 4's scoring engine (`src/scoring/state_machine.py`, `src/analysis/rally_segmentation.py`) are implemented, unit-tested (128 tests), and run end-to-end from cached perception output via `scripts/`.
+
+Two known accuracy limits are documented in `docs/decisions.md` and should be read before trusting output: **speed** is validated on broadcast footage (138/137/143 km/h) but not on the amateur clips, where perspective amplification near the far baseline inflates it; **rally outcomes** are proposals capped at 0.6 confidence and require human confirmation.
 
 ## Compute
 This dev machine has a local NVIDIA GeForce RTX 3070 Laptop GPU (8GB VRAM, driver reports CUDA 13.1) alongside its AMD integrated graphics — GPU inference (Phase 0 pipeline run, Phase 1 perception extraction) runs locally via CUDA-enabled torch/torchvision (cu121 wheels). No separate NVIDIA machine is needed. See `docs/decisions.md` for the correction from the original (incorrect) AMD-only assumption.

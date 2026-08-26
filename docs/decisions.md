@@ -223,3 +223,58 @@ done here:
 
 Until then: treat speed as validated on dense/clean tracking only, and do not present
 per-shot speeds from the current amateur clips as accurate.
+
+## 2026-07-31 — Phase 4: scoring is a pure immutable state machine; rally outcomes are proposals only
+`src/scoring/state_machine.py` is deliberately free of any ML/video dependency: every
+transition is `(state, point winner) -> new state`, so the whole format -- points, deuce,
+advantage, no-ad, games, sets, tiebreaks, advantage final sets, serve rotation, best-of-3/5
+-- is exhaustively unit-testable (36 tests, including a full three-set match with a deuce
+game and a tiebreak). This is the part of the system that must never be wrong, and it is
+the part with no uncertainty in it.
+
+**MatchState is immutable and MatchScorer keeps a history stack.** That is not stylistic:
+rally outcomes come from unreliable automation, so `undo()` has to be exact, and rebuilding
+a score by replaying mutations would eventually drift. Popping a stack of immutable
+snapshots cannot.
+
+**Tiebreak serve is derived, not stored.** `MatchState.server` computes the tiebreak
+rotation (one point, then two each) from points played rather than tracking it as a field,
+so it cannot fall out of sync with the score. Serve simply alternates on every game, which
+also yields the correct post-tiebreak server (the player who served the tiebreak's first
+point receives first in the next set).
+
+### Rally outcomes: capped confidence, on purpose
+`src/analysis/rally_segmentation.py` segments rallies by gaps between bounces
+(>2.5s of quiet = new point) and proposes a winner from the final bounce:
+a bounce in a player's half was hit by their opponent; if it landed **out** the hitter
+loses; if it landed **in** we assume the receiver failed to return it.
+
+That last inference is weak -- a rally also ends on a net cord, a miss after a good bounce,
+or a bounce the detector missed -- so every proposal is multiplied by
+`MAX_PROPOSAL_CONFIDENCE = 0.6`. Nothing here is ever presented as near-certain, which
+matches development-plan.md §8's assessment that detecting *why* a rally ended is
+research-grade. `MatchScorer` records whether a human accepted or overrode each proposal
+and exposes `correction_rate` -- that number, not a confidence score we invented, is the
+honest measure of how good the automation actually is.
+
+### Bounce frames and tracked ball positions don't always coincide
+Found while running the scorer end-to-end, not in tests: an entire real rally
+(`xenia_720p`, frames 153-237, 4 bounces) came back "inconclusive -- no ball position at
+any bounce". Cause: the CatBoost bounce detector interpolates gaps in the pixel track
+internally, so it legitimately reports bounces on frames where our cached track is None.
+Fixed by searching +/-3 frames for the nearest tracked position, with a confidence penalty
+proportional to the offset (the ball is moving fast near a bounce, so a borrowed position
+is metres from where it actually landed) and the borrow disclosed in the proposal's
+`reason` string. Both clips now score end-to-end with no unscoreable rallies.
+
+### Not done
+* **Serves are scored with rally rules.** Correctly judging a serve needs the service box,
+  which depends on the deuce/ad court -- i.e. on the score itself. The wiring
+  (state machine -> expected service box -> `classify_bounce(shot_type="serve")`) is
+  straightforward but untested against real serve footage, so it is left out rather than
+  guessed at. Phase 2 already takes `service_box` as a required caller argument for exactly
+  this reason.
+* **Rally boundaries are unvalidated.** Both test clips segmented into 2 rallies each,
+  which is plausible for their length but was not checked frame-by-frame against the video.
+  The 2.5s gap threshold is a conservative guess, biased toward splitting rather than
+  merging (a missing point is easier for a human to spot than a silently merged one).
