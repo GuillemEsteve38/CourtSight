@@ -278,3 +278,51 @@ is metres from where it actually landed) and the borrow disclosed in the proposa
   which is plausible for their length but was not checked frame-by-frame against the video.
   The 2.5s gap threshold is a conservative guess, biased toward splitting rather than
   merging (a missing point is easier for a human to spot than a silently merged one).
+
+## 2026-07-31 — Phase 5: pipeline split into pure/impure halves, in-process jobs, one scoring implementation
+`src/pipeline.py` is deliberately two functions. `analyze_video()` does the impure work
+(decode, run three models, read/write the JSON cache); `build_analysis()` turns loaded
+perception data into the final result and is pure -- no torch, no disk, no GPU. That keeps
+the assembly logic (which bounce gets a call, which segments produce a speed, how rallies
+map to proposals) unit-testable, and lets the API rebuild a response from cache without
+loading a model.
+
+**Async jobs are in-process, not a broker.** Analysis takes tens of seconds to minutes, so
+uploads return a job id and the client polls. `app/backend/jobs.py` is an in-memory dict
+plus a *single-worker* thread pool: one worker because the GPU can only usefully do one
+clip at a time and serialising keeps VRAM predictable, threads (not processes) because the
+heavy stages are torch/OpenCV calls that release the GIL. The cost -- jobs are lost on
+restart -- is the honest trade for a local tool; swapping in Celery/RQ later means
+reimplementing `submit` and `get` and nothing else.
+
+**Progress had to be driven from inside the vendored loops.** Reporting only at stage
+boundaries left the bar frozen at 4% for ~70s of court detection. Neither vendor loop
+accepts a callback, and they read frames differently (`court_detection_net` iterates the
+list, `ball_detector` indexes it), so `_ProgressFrames` is a `list` subclass that reports
+from *both* access paths -- real intra-stage progress without patching read-only vendored
+code. Progress is high-watermarked because `ball_detector` reads backwards
+(`frames[num-1]`, `frames[num-2]`) and a bar that goes backwards looks broken. Verified
+end-to-end: progress now advances smoothly 0 -> 100 instead of in four jumps.
+
+**Scoring lives only in Python.** The frontend could have implemented tennis scoring in JS,
+but two implementations of the rules is two things to keep correct. Instead `POST /api/score`
+takes the list of confirmed winners and runs the tested `MatchScorer`. It is stateless: the
+client owns the list and re-posts it whenever it changes, so undo/override in the UI is just
+"send a shorter list", and there is no server-side session to desynchronise.
+
+**The upload endpoint is sync, not async.** Writing a multi-hundred-MB upload is blocking
+IO; inside an `async def` it would stall the event loop and freeze the progress polling the
+UI depends on -- a real bug, not a lint nit. A sync endpoint runs in FastAPI's threadpool.
+
+### The UI states uncertainty rather than hiding it
+Speeds are shown with their band (`138` / `135-162 km/h`) and labelled estimates; rally
+outcomes are shown as proposals with a confidence bar that tops out around 60%, with
+explicit confirm/override buttons; and a warning appears when ball tracking covers under
+70% of frames, since that is the regime where Phase 3 found speeds become unreliable. This
+is the same honesty the analysis modules enforce, carried through to the surface the user
+actually looks at.
+
+### Verified end-to-end
+Uploaded `xenia2.mp4` through the running server: job queued, progressed through all five
+stages, produced a result identical to the CLI (same 3 bounces, 2 shots, 2 rallies) and a
+38 MB annotated video served over HTTP. The built frontend is served by FastAPI from `/`.

@@ -19,3 +19,10 @@ data/processed/*
 !data/processed/.gitkeep
 
 vendor/
+
+# Frontend build artifacts and deps
+app/frontend/node_modules/
+app/frontend/dist/
+
+# Uploaded videos (user data)
+data/uploads/

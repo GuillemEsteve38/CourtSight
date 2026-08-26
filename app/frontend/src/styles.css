@@ -1,0 +1,215 @@
+:root {
+  --bg: #10131a;
+  --card: #181c26;
+  --card-edge: #262c3a;
+  --text: #e8ecf4;
+  --muted: #96a0b5;
+  --accent: #4ade80;
+  --in: #38bdf8;
+  --out: #f87171;
+  --warn: #fbbf24;
+  --radius: 12px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.app {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 32px 20px 80px;
+}
+
+.header h1 { margin: 0; font-size: 30px; letter-spacing: -0.02em; }
+.tagline { margin: 4px 0 0; color: var(--muted); }
+.health { margin: 10px 0 0; font-size: 13px; }
+.health.ok { color: var(--accent); }
+.health.warn { color: var(--warn); }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--card-edge);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-top: 20px;
+}
+.card h2 { margin: 0 0 8px; font-size: 17px; }
+
+.hint { color: var(--muted); font-size: 13px; margin: 6px 0; }
+.error { color: var(--out); font-size: 14px; }
+.warning {
+  color: var(--warn);
+  font-size: 13px;
+  border-left: 3px solid var(--warn);
+  padding-left: 10px;
+  margin-top: 14px;
+}
+
+/* Upload -------------------------------------------------------------- */
+.dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 110px;
+  margin-top: 12px;
+  border: 1.5px dashed var(--card-edge);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.dropzone:hover:not(.disabled) { border-color: var(--accent); background: #1c2130; }
+.dropzone.disabled { opacity: 0.5; cursor: not-allowed; }
+.dropzone input { display: none; }
+
+/* Progress ------------------------------------------------------------ */
+.progress-head { display: flex; justify-content: space-between; align-items: center; }
+.filename { font-weight: 600; }
+.status {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #232937;
+  color: var(--muted);
+}
+.status.done { color: var(--accent); }
+.status.error { color: var(--out); }
+
+.progressbar {
+  height: 8px;
+  margin: 12px 0 8px;
+  background: #232937;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progressbar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+.progress-message { margin: 0; font-size: 13px; color: var(--muted); }
+
+/* Stats --------------------------------------------------------------- */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.stat {
+  background: #1e2330;
+  border-radius: 10px;
+  padding: 12px;
+  text-align: center;
+}
+.stat-value { display: block; font-size: 20px; font-weight: 650; }
+.stat-label { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+.columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.columns > .card { margin-top: 20px; }
+@media (max-width: 900px) { .columns { grid-template-columns: 1fr; } }
+
+.player { width: 100%; border-radius: 10px; background: #000; }
+
+/* Mini court ---------------------------------------------------------- */
+.minicourt { width: 100%; max-height: 460px; display: block; }
+.mc-surround { fill: #1b2030; }
+.mc-court { fill: #24506b; }
+.mc-lines { fill: none; stroke: #dfe7f2; stroke-width: 0.08; }
+.mc-net { stroke: #f8fafc; stroke-width: 0.14; }
+.mc-trail circle { fill: var(--accent); opacity: 0.4; }
+.mc-bounce { stroke: #0b0e14; stroke-width: 0.06; cursor: pointer; }
+.mc-bounce.is-in { fill: var(--in); }
+.mc-bounce.is-out { fill: var(--out); }
+.mc-bounce.is-selected { stroke: #fff; stroke-width: 0.12; }
+
+.legend { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-left: 10px; }
+.dot.is-in { background: var(--in); }
+.dot.is-out { background: var(--out); }
+
+/* Calls and speeds ------------------------------------------------------ */
+.call-list, .speed-list, .rally-list { list-style: none; margin: 10px 0 0; padding: 0; }
+.call-list, .speed-list { max-height: 320px; overflow-y: auto; }
+
+.call, .speed-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.call:nth-child(odd), .speed-row:nth-child(odd) { background: #1e2330; }
+.call { cursor: default; }
+.call-frame, .speed-frames { color: var(--muted); min-width: 92px; }
+.call-verdict { font-weight: 700; min-width: 38px; }
+.call.is-in .call-verdict { color: var(--in); }
+.call.is-out .call-verdict { color: var(--out); }
+.call-margin { color: var(--muted); }
+
+.speed-value { font-size: 17px; font-weight: 650; min-width: 44px; text-align: right; }
+.speed-band { color: var(--muted); }
+
+/* Score ------------------------------------------------------------------ */
+.scoreboard {
+  background: #1e2330;
+  border-radius: 10px;
+  padding: 14px;
+  margin: 12px 0 16px;
+}
+.scoreline { display: flex; justify-content: space-between; padding: 3px 0; }
+.scoreline .label { color: var(--muted); font-size: 13px; }
+.scoreline .value { font-variant-numeric: tabular-nums; font-weight: 600; }
+.winner { color: var(--accent); font-weight: 650; margin: 10px 0 0; }
+
+.rally {
+  border: 1px solid var(--card-edge);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+.rally-head { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+.rally-reason { font-size: 13px; margin: 8px 0; }
+
+.confidence {
+  position: relative;
+  height: 18px;
+  background: #232937;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.confidence-fill { height: 100%; background: linear-gradient(90deg, #f59e0b, #4ade80); opacity: 0.45; }
+.confidence-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--text);
+}
+
+.rally-actions { display: flex; align-items: center; gap: 8px; }
+.chip {
+  background: #232937;
+  border: 1px solid var(--card-edge);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.chip:hover { border-color: var(--muted); }
+.chip.proposed { border-style: dashed; }
+.chip.chosen { background: var(--accent); color: #0b0e14; border-color: var(--accent); font-weight: 650; }
+.tick { font-size: 11px; opacity: 0.7; }
+.decided { font-size: 12px; color: var(--muted); }

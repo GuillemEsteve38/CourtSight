@@ -1,0 +1,12 @@
+line-length = 100
+
+[lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom is `param: T = File(...)` / `Depends(...)`.
+# These calls in argument defaults are intentional and evaluated once by design, so
+# B008 (mutable-call-in-default) doesn't apply to them.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Query",
+]

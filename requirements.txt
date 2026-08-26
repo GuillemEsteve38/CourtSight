@@ -19,7 +19,14 @@ sympy
 tqdm
 matplotlib
 
+# App layer (Phase 5): FastAPI backend + async processing jobs.
+# python-multipart is required by FastAPI for file uploads.
+fastapi
+uvicorn
+python-multipart
+
 # Testing / tooling
 pytest
+httpx  # FastAPI's TestClient transport
 ruff
 black

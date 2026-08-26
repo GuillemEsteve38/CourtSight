@@ -121,3 +121,59 @@ failure points (see development-plan.md §6 Phase 0 gotchas).
 - `vendor/TennisProject/utils.py` uses the pre-1.0 PySceneDetect `VideoManager` API,
   removed in scenedetect 0.7 — `requirements.txt` pins `scenedetect==0.6.7.1` to match;
   see `docs/decisions.md`.
+
+---
+
+# Running the app (Phase 5)
+
+## Backend
+
+```bash
+.venv\Scripts\activate
+uvicorn app.backend.main:app --reload
+```
+
+Serves the API on http://127.0.0.1:8000. If `app/frontend/dist` exists it also serves the
+built UI at `/`, so this single command is enough to use the app.
+
+`GET /api/health` reports whether CUDA was found — check it first if analysis is slow.
+
+## Frontend
+
+The build output is committed-ignored, so build it once:
+
+```bash
+cd app/frontend
+npm install
+npm run build
+```
+
+Then reload the backend and open http://127.0.0.1:8000.
+
+For frontend development with hot reload, run the backend as above and in another terminal:
+
+```bash
+cd app/frontend
+npm run dev
+```
+
+That serves the UI on http://127.0.0.1:5173 and proxies `/api` to the backend.
+
+## Command line
+
+The app is not required — the same pipeline runs headlessly:
+
+```bash
+# extract + cache perception output (court keypoints, ball track, bounces)
+.venv\Scripts\python.exe scripts/run_perception.py --input data/samples/<clip>.mp4
+
+# render an annotated debug video from that cache
+.venv\Scripts\python.exe scripts/render_debug_overlay.py --input data/samples/<clip>.mp4
+
+# score a clip interactively, confirming each proposed rally outcome
+.venv\Scripts\python.exe scripts/score_match.py --input data/samples/<clip>.mp4
+```
+
+Input at any 16:9-ish resolution is resized to 1280×720 automatically. Anything further
+from 16:9 is rejected with a clear message rather than silently distorted — see
+`docs/decisions.md`.
