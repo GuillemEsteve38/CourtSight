@@ -30,8 +30,6 @@ Upload a clip of a fixed-camera match and CourtSight will:
 
 ## What it does *not* do
 
-Being direct about this, because the gap between a demo and a product is mostly here:
-
 | Not supported | Why |
 |---|---|
 | Moving or broadcast multi-camera footage | Court detection assumes one fixed viewpoint |
@@ -40,7 +38,7 @@ Being direct about this, because the gap between a demo and a product is mostly 
 | Spin, shot classification, biomechanics | Out of scope for v1 |
 | Clips longer than ~80 seconds | Every frame is held in RAM — see [Limits](#limits) |
 
-## Accuracy, honestly
+## Accuracy and validation
 
 The analysis modules refuse to state more than the data supports, and the UI carries
 that through.
@@ -54,13 +52,13 @@ tracked on 94% of frames, per-flight peaks come out at 138 / 137 / 143 km/h — 
 professional rally speeds. On amateur clips with 49–67% tracking coverage, the same code
 reports 213–259 km/h, which is *not* credible for club tennis.
 
-That gap is understood, not mysterious: near the far baseline the homography's
+The cause is geometric. Near the far baseline the homography's
 metres-per-pixel is enormous — in one measured window the ball moved 13 pixels, which
 mapped to **5.5 metres** of court distance. Sub-pixel jitter becomes tens of km/h, and
 sparse tracking manufactures fake peaks. The fix is per-point uncertainty derived from
 the homography Jacobian, so far-court measurements self-report as low confidence; it is
-[written up in the decision log](docs/decisions.md) but not implemented. Thresholds were
-deliberately *not* tuned to make the numbers look plausible.
+[written up in the decision log](docs/decisions.md) but not implemented. Thresholds have not
+been tuned to mask the implausible values.
 
 Until then the UI warns when ball tracking covers under 70% of frames, and every speed
 is shown with its band.
@@ -92,7 +90,7 @@ cd app/frontend && npm install && npm run build && cd ../..
 
 Then open <http://127.0.0.1:8000>, upload a clip, and watch it process.
 
-Prefer the command line? The app is optional:
+The CLI runs the same pipeline without the app:
 
 ```powershell
 .venv\Scripts\python.exe scripts/run_perception.py     --input data/samples/<clip>.mp4
@@ -147,8 +145,8 @@ exhaustively testable. `src/pipeline.py` is likewise split into an impure
   per 1280×720 frame ⇒ ~4.6 GB per minute), because the vendored models take a frame
   *list*, not a stream. Longer clips are refused up front with an explanatory error
   rather than an OOM crash. Raise `COURTSIGHT_MAX_FRAMES` if you have the memory.
-- **Jobs are in-memory** and lost on restart — a deliberate trade for a local tool over
-  dragging in a task broker.
+- **Jobs are in-memory** and lost on restart, a deliberate trade for a local tool rather than
+  adding a task broker.
 - **30 fps undersamples fast serves.** ≥60 fps footage from a fixed tripod materially
   improves both tracking density and speed accuracy.
 - **A fixed camera is assumed.** Court detection runs on every 10th frame and the
@@ -166,7 +164,7 @@ exhaustively testable. `src/pipeline.py` is likewise split into an impure
 .venv\Scripts\python.exe -m ruff check .
 ```
 
-Decisions — including the ones that turned out wrong — are logged in
+Design decisions, including the ones later reversed, are logged in
 [docs/decisions.md](docs/decisions.md). The phased plan is in
 [docs/development-plan.md](docs/development-plan.md).
 
